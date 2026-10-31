@@ -141,7 +141,7 @@ private fun HomeScreen() {
             }
             Spacer(Modifier.height(10.dp))
             LazyColumn(Modifier.weight(1f)) {
-                items(servers, key = { it.id }) { server ->
+                items(servers.sortedWith(compareBy { proxyResults[it.id]?.latencyMs ?: Long.MAX_VALUE }), key = { it.id }) { server ->
                     Card(Modifier.fillMaxWidth().padding(vertical = 5.dp), colors = CardDefaults.cardColors(containerColor = Panel)) {
                         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
@@ -206,6 +206,6 @@ private fun HomeScreen() {
                 }
             }
         }
-        Text("Статус: ${if (busy || scanning) "выполняется операция" else "готово"} • v0.2.0", color = Color.Gray, fontSize = 10.sp)
+        Text("Статус: ${if (busy || scanning) "выполняется операция" else "готово"} • v0.3.0", color = Color.Gray, fontSize = 10.sp)
     }
 }
