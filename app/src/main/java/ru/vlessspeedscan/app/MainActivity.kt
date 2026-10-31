@@ -53,7 +53,7 @@ private fun HomeScreen() {
     var notice by remember { mutableStateOf("Добавьте URL подписки, чтобы загрузить серверы.") }
     val subscriptions = remember { mutableStateListOf<SubscriptionEntry>() }
     val servers = remember { mutableStateListOf<ServerProfile>() }
-    val tcpResults = remember { mutableStateMapOf<String, TcpProbeResult>() }
+    val proxyResults = remember { mutableStateMapOf<String, ProxyProbeResult>() }
     val scope = rememberCoroutineScope()
 
     suspend fun loadSubscription(url: String, isNew: Boolean) {
@@ -123,18 +123,17 @@ private fun HomeScreen() {
                         onClick = {
                             scope.launch {
                                 scanning = true
-                                tcpResults.clear()
-                                servers.forEach { server ->
-                                    tcpResults[server.id] = ServerTester.testTcp(server.host, server.port)
-                                }
+                                proxyResults.clear()
+                                val results = withContext(Dispatchers.IO) { LibXrayBridge.pingServers(servers.toList()) }
+                                results.forEach { (id, result) -> proxyResults[id] = result }
                                 scanning = false
                             }
                         },
                         enabled = servers.isNotEmpty() && !scanning,
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text(if (scanning) "Проверяю…" else "Проверить доступность") }
+                    ) { Text(if (scanning) "Проверяю через прокси…" else "Проверить ping через прокси") }
                     Text(
-                        "Измеряется прямое TCP-подключение к адресу сервера без VPN. Это не ICMP ping и не скорость через прокси.",
+                        "Проверяется HTTP-задержка через Xray-прокси. Включать VPN для проверки не нужно.",
                         color = Color.LightGray,
                         fontSize = 11.sp
                     )
@@ -148,12 +147,12 @@ private fun HomeScreen() {
                             Column(Modifier.weight(1f)) {
                                 Text(server.name, color = Color.White, fontWeight = FontWeight.Medium)
                                 Text("${server.protocol} • ${server.host}:${server.port}", color = Color.Gray, fontSize = 12.sp)
-                                val result = tcpResults[server.id]
+                                val result = proxyResults[server.id]
                                 Text(
                                     when {
-                                        result == null -> "TCP: ещё не проверен"
-                                        result.latencyMs != null -> "TCP-подключение: ${result.latencyMs} мс"
-                                        else -> "Недоступен: ${result.error ?: "ошибка"}"
+                                        result == null -> "Прокси ping: ещё не проверен"
+                                        result.latencyMs != null -> "Через прокси: ${result.latencyMs} мс"
+                                        else -> "Ошибка прокси: ${result.error ?: "сервер не отвечает"}"
                                     },
                                     color = if (result?.latencyMs != null) Accent else Color.LightGray,
                                     fontSize = 12.sp
