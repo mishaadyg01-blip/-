@@ -28,6 +28,14 @@ jobs:
           unzip -j /tmp/libxray-android.zip 'libxray-android/libXray.aar' -d app/libs
           test -s app/libs/libXray.aar
           unzip -l app/libs/libXray.aar | head -40
+      - name: Inspect libXray API
+        run: |
+          unzip -p app/libs/libXray.aar classes.jar > /tmp/libxray-classes.jar
+          jar tf /tmp/libxray-classes.jar | grep -Ei 'libxray|processfinder' | head -80
+          echo "=== LibXray methods ==="
+          javap -classpath /tmp/libxray-classes.jar -public libXray.LibXray || true
+          echo "=== ProcessFinder methods ==="
+          javap -classpath /tmp/libxray-classes.jar -public libXray.ProcessFinder || true
       - name: Build debug APK
         run: gradle assembleDebug
       - name: Upload APK
