@@ -49,9 +49,11 @@ private fun HomeScreen() {
     var tab by remember { mutableIntStateOf(0) }
     var subscriptionUrl by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
+    var scanning by remember { mutableStateOf(false) }
     var notice by remember { mutableStateOf("Добавьте URL подписки, чтобы загрузить серверы.") }
     val subscriptions = remember { mutableStateListOf<SubscriptionEntry>() }
     val servers = remember { mutableStateListOf<ServerProfile>() }
+    val tcpResults = remember { mutableStateMapOf<String, TcpProbeResult>() }
     val scope = rememberCoroutineScope()
 
     suspend fun loadSubscription(url: String, isNew: Boolean) {
@@ -66,7 +68,7 @@ private fun HomeScreen() {
                 val connection = URL(url).openConnection() as HttpURLConnection
                 connection.connectTimeout = 15000
                 connection.readTimeout = 20000
-                connection.setRequestProperty("User-Agent", "VLESS-SPEED-SCAN/0.1")
+                connection.setRequestProperty("User-Agent", "VegaSpan/0.1")
                 try {
                     connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                 } finally {
@@ -75,11 +77,9 @@ private fun HomeScreen() {
             }
             val result = SubscriptionParser.parse(body)
             if (result.profiles.isEmpty()) {
-                notice = "Ссылку получили, но поддерживаемых серверов не найдено. Проверьте формат подписки."
+                notice = "Поддерживаемых серверов не найдено. Проверьте формат подписки."
             } else {
-                if (isNew) {
-                    subscriptions.removeAll { it.url == url }
-                }
+                if (isNew) subscriptions.removeAll { it.url == url }
                 val entry = SubscriptionEntry(
                     url = url,
                     title = "Подписка ${subscriptions.size + if (isNew) 1 else 0}",
@@ -93,7 +93,7 @@ private fun HomeScreen() {
                 }
                 servers.removeAll { existing -> result.profiles.any { it.id == existing.id } }
                 servers.addAll(result.profiles)
-                notice = "Загружено серверов: ${result.profiles.size}. Проверка соединения пока не подключена."
+                notice = "Загружено серверов: ${result.profiles.size}."
                 subscriptionUrl = ""
             }
         } catch (e: Exception) {
@@ -104,8 +104,8 @@ private fun HomeScreen() {
     }
 
     Column(Modifier.fillMaxSize().background(Bg).padding(18.dp)) {
-        Text("VLESS SPEED SCAN", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Bold)
-        Text("ИМПОРТ И УПРАВЛЕНИЕ СЕРВЕРАМИ", color = Color.Gray, fontSize = 10.sp)
+        Text("VEGASPAN", color = Color.White, fontSize = 23.sp, fontWeight = FontWeight.Bold)
+        Text("ПРОВЕРКА И УПРАВЛЕНИЕ СЕРВЕРАМИ", color = Color.Gray, fontSize = 10.sp)
         Spacer(Modifier.height(22.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             listOf("Серверы", "Подписки").forEachIndexed { i, label ->
@@ -116,13 +116,31 @@ private fun HomeScreen() {
         if (tab == 0) {
             Card(colors = CardDefaults.cardColors(containerColor = Panel), shape = RoundedCornerShape(18.dp)) {
                 Column(Modifier.padding(16.dp)) {
-                    Text("Список серверов", color = Color.White, fontWeight = FontWeight.SemiBold)
-                    Text("Серверов импортировано: ${servers.size}", color = Accent, fontSize = 13.sp)
+                    Text("Проверка серверов", color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text("Импортировано: ${servers.size}", color = Accent, fontSize = 13.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("Тест скорости и подключение появятся после интеграции сетевого движка.", color = Color.LightGray, fontSize = 12.sp)
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                scanning = true
+                                tcpResults.clear()
+                                servers.forEach { server ->
+                                    tcpResults[server.id] = ServerTester.testTcp(server.host, server.port)
+                                }
+                                scanning = false
+                            }
+                        },
+                        enabled = servers.isNotEmpty() && !scanning,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text(if (scanning) "Проверяю…" else "Проверить доступность") }
+                    Text(
+                        "Измеряется прямое TCP-подключение к адресу сервера без VPN. Это не ICMP ping и не скорость через прокси.",
+                        color = Color.LightGray,
+                        fontSize = 11.sp
+                    )
                 }
             }
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
             LazyColumn(Modifier.weight(1f)) {
                 items(servers, key = { it.id }) { server ->
                     Card(Modifier.fillMaxWidth().padding(vertical = 5.dp), colors = CardDefaults.cardColors(containerColor = Panel)) {
@@ -130,6 +148,16 @@ private fun HomeScreen() {
                             Column(Modifier.weight(1f)) {
                                 Text(server.name, color = Color.White, fontWeight = FontWeight.Medium)
                                 Text("${server.protocol} • ${server.host}:${server.port}", color = Color.Gray, fontSize = 12.sp)
+                                val result = tcpResults[server.id]
+                                Text(
+                                    when {
+                                        result == null -> "TCP: ещё не проверен"
+                                        result.latencyMs != null -> "TCP-подключение: ${result.latencyMs} мс"
+                                        else -> "Недоступен: ${result.error ?: "ошибка"}"
+                                    },
+                                    color = if (result?.latencyMs != null) Accent else Color.LightGray,
+                                    fontSize = 12.sp
+                                )
                             }
                         }
                     }
@@ -179,6 +207,6 @@ private fun HomeScreen() {
                 }
             }
         }
-        Text("Статус: ${if (busy) "выполняется операция" else "готово"} • v0.1.0", color = Color.Gray, fontSize = 10.sp)
+        Text("Статус: ${if (busy || scanning) "выполняется операция" else "готово"} • v0.2.0", color = Color.Gray, fontSize = 10.sp)
     }
 }
